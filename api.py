@@ -354,6 +354,9 @@ async def manual_monitoring(user: dict = Depends(get_user_from_token)):
         log_activity(user["id"], "manual_monitoring", f"Found {len(suggestions)} topics")
         return {"message": "Monitoring completed", "topics_found": len(suggestions), "timestamp": datetime.now().isoformat()}
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in monitoring: {error_details}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/brainstorm", response_model=BrainstormResponse)
