@@ -362,26 +362,34 @@ async def manual_monitoring(user: dict = Depends(get_user_from_token)):
 Target audience: {profile['target_audience']}
 
 Your task:
-1. Search for recent news (past week) on these topics
+1. Search for recent news (past week) on these topics using web search
 2. Identify 3-5 stories that would make compelling LinkedIn posts
 3. For each story, provide:
    - A catchy title
-   - Why it's relevant to scaling business leaders
-   - Key data points or insights
+   - 2-3 sentence summary with key facts
+   - Why it's relevant to the Target audience
+   - Key data points or insights (with sources)
    - A suggested angle for the post
    - Relevance score (1-10)
+   - IMPORTANT: List all source URLs you found this information from
+   - Publication date if available
 
-Return your findings as a JSON array with this structure:
+Return ONLY a JSON array (no other text) with this exact structure:
 [
   {{
     "title": "Story headline",
     "description": "2-3 sentence summary",
     "relevance_score": 8,
-    "sources": ["url1"],
-    "key_points": ["point 1", "point 2", "point 3"],
+    "sources": [
+      {{"url": "https://...", "title": "Article title", "date": "2026-01-15"}},
+      {{"url": "https://...", "title": "Article title", "date": "2026-01-14"}}
+    ],
+    "key_points": ["point 1 (Source: Publication Name)", "point 2 (Source: Publication Name)"],
     "suggested_angle": "How to position this"
   }}
 ]
+
+Make sure every key point references its source publication.
 """
         
         message = client.messages.create(
@@ -411,6 +419,10 @@ Return your findings as a JSON array with this structure:
                 c = conn.cursor()
                 
                 for item in data:
+                    # Handle both old format (list of strings) and new format (list of objects)
+                    sources = item.get('sources', [])
+                    sources_json = json.dumps(sources)
+                    
                     c.execute('''
                         INSERT INTO topics (user_id, title, description, relevance_score,
                                           sources, key_points, suggested_angle, created_at, status)
@@ -420,7 +432,7 @@ Return your findings as a JSON array with this structure:
                         item.get('title', ''),
                         item.get('description', ''),
                         item.get('relevance_score', 5),
-                        json.dumps(item.get('sources', [])),
+                        sources_json,
                         json.dumps(item.get('key_points', [])),
                         item.get('suggested_angle', ''),
                         datetime.now().isoformat(),
