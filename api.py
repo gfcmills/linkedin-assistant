@@ -337,22 +337,111 @@ async def manual_monitoring(user: dict = Depends(get_user_from_token)):
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(status_code=503, detail="API key not configured")
+    
     try:
         profile = get_user_profile(user["id"])
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
-        temp_assistant = ContentAssistant(api_key, db_path=":memory:")
-        temp_assistant.user_profile = profile
-        suggestions = temp_assistant.monitor_industry_news()
-        conn = sqlite3.connect(db_path)
-        c = conn.cursor()
-        for suggestion in suggestions:
-            c.execute('INSERT INTO topics (user_id, title, description, relevance_score, sources, key_points, suggested_angle, created_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (user["id"], suggestion.title, suggestion.description, suggestion.relevance_score, json.dumps(suggestion.sources), json.dumps(suggestion.key_points), suggestion.suggested_angle, suggestion.created_at, suggestion.status))
-        conn.commit()
-        conn.close()
+        
+        # Call Claude directly instead of using ContentAssistant
+        from anthropic import Anthropic
+        client = Anthropic(api_key=api_key)
+        
+        search_queries = [
+            "UK venture capital funding news",
+            "European tech IPO 2025",
+            "deeptech startup funding",
+            "Series B Series C funding Europe",
+            "UK tech scaleup news",
+            "European vs US IPO comparison"
+        ]
+        
+        monitoring_prompt = f"""You are monitoring industry news for a LinkedIn content creator focused on:
+- {', '.join(profile['focus_areas'][:4])}
+
+Target audience: {profile['target_audience']}
+
+Your task:
+1. Search for recent news (past week) on these topics
+2. Identify 3-5 stories that would make compelling LinkedIn posts
+3. For each story, provide:
+   - A catchy title
+   - Why it's relevant to scaling business leaders
+   - Key data points or insights
+   - A suggested angle for the post
+   - Relevance score (1-10)
+
+Return your findings as a JSON array with this structure:
+[
+  {{
+    "title": "Story headline",
+    "description": "2-3 sentence summary",
+    "relevance_score": 8,
+    "sources": ["url1"],
+    "key_points": ["point 1", "point 2", "point 3"],
+    "suggested_angle": "How to position this"
+  }}
+]
+"""
+        
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4000,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": monitoring_prompt}]
+        )
+        
+        # Extract text from response
+        full_text = ""
+        for block in message.content:
+            if block.type == "text":
+                full_text += block.text
+        
+        # Parse JSON
+        suggestions = []
+        try:
+            start = full_text.find('[')
+            end = full_text.rfind(']') + 1
+            if start != -1 and end > start:
+                json_str = full_text[start:end]
+                data = json.loads(json_str)
+                
+                # Save directly to multi-user database
+                conn = sqlite3.connect(db_path)
+                c = conn.cursor()
+                
+                for item in data:
+                    c.execute('''
+                        INSERT INTO topics (user_id, title, description, relevance_score,
+                                          sources, key_points, suggested_angle, created_at, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        user["id"],
+                        item.get('title', ''),
+                        item.get('description', ''),
+                        item.get('relevance_score', 5),
+                        json.dumps(item.get('sources', [])),
+                        json.dumps(item.get('key_points', [])),
+                        item.get('suggested_angle', ''),
+                        datetime.now().isoformat(),
+                        'new'
+                    ))
+                    suggestions.append(item)
+                
+                conn.commit()
+                conn.close()
+        except json.JSONDecodeError:
+            print("Could not parse JSON from response")
+        
         log_usage(user["id"], "manual_monitoring")
         log_activity(user["id"], "manual_monitoring", f"Found {len(suggestions)} topics")
-        return {"message": "Monitoring completed", "topics_found": len(suggestions), "timestamp": datetime.now().isoformat()}
+        
+        return {
+            "message": "Monitoring completed",
+            "topics_found": len(suggestions),
+            "timestamp": datetime.now().isoformat()
+        }
+        
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
