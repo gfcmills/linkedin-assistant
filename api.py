@@ -59,12 +59,17 @@ class BrainstormRequest(BaseModel):
     topic_id: int
     user_input: str = ""
 
+class SourceInfo(BaseModel):
+    url: str
+    title: Optional[str] = None
+    date: Optional[str] = None
+
 class TopicResponse(BaseModel):
     id: int
     title: str
     description: str
     relevance_score: int
-    sources: List[str]
+    sources: List[str | SourceInfo]  # Can be either strings or source objects
     key_points: List[str]
     suggested_angle: str
     created_at: str
