@@ -918,13 +918,7 @@ def run_all_user_monitoring():
         return
     
     conn = sqlite3.connect(db_path)
-    <function_calls>
-<invoke name="artifacts">
-<parameter name="command">update</parameter>
-<parameter name="id">complete_multiuser_backend</parameter>
-<parameter name="old_str">    conn = sqlite3.connect(db_path)</parameter>
-<parameter name="new_str">    conn = sqlite3.connect(db_path)
-c = conn.cursor()
+
 today = datetime.now()
 day_of_week = today.weekday()
 current_month_start = today.replace(day=1, hour=0, minute=0, second=0)
